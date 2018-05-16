@@ -7,5 +7,5 @@ url:  http://dokfaust.github.io
 author: Gaetano
 
 future: true
-timezone: UTC+2
+timezone: Europe/Rome
 plugins: [github-pages]
