@@ -1,0 +1,9 @@
+theme: jekyll-theme-minimal
+
+title:  Ranting Randomness
+description: Gsoc student, julia, compilers and random stuff.
+url:  http://dokfaust.github.io
+
+author: Gaetano
+
+plugins: [github-pages]
