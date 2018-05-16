@@ -3,7 +3,7 @@ layout: post
 title: "Gsoc week -1 report"
 tags: [ gsoc, julia, llvm, perf, report ]
 ---
-#What my project is all about
+# What my project is all about
 
 My project on Julia Thread safety has been accepted for this GSoC. I will
 focus on enhancing native profiling support, per-thread RNG and thread safe
