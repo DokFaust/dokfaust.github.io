@@ -6,4 +6,6 @@ url:  http://dokfaust.github.io
 
 author: Gaetano
 
+future: true
+timezone: Europe/Rome
 plugins: [github-pages]
