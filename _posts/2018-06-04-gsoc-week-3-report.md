@@ -1,4 +1,3 @@
-
 ---
 layout: post
 title: "Gsoc week 3 report"
