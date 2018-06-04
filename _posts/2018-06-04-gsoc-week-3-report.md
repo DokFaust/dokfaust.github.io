@@ -13,7 +13,7 @@ profiling tools interfaces are managed as JITEventListener classes.
 Unfortunately LLVM ORC JIT does not support natively [JITEventListener](https://groups.google.com/forum/#!topic/llvm-dev/B7quHkDRoYk), but on the other hand, a way of registering objects and stacking them locally is present in the Julia JIT engine under the subclass `debugobjregistrar`.
 
 At this point it was necessary for me to implement just `RegisterJITEventListener`, 
-which managaed a vector of `JITEventListener`s, and `NotifyFinalized`, 
+which managed a vector of `JITEventListener`s, and `NotifyFinalized`, 
 which for each EventListener calls the `NotifyObject` emitted method.
 
 Notifying an object usually means dumping the execution details in a file
@@ -31,7 +31,7 @@ codebase.
 
 ## Perf
 
-As Perf by itself is not implemented in LLVM, the [D44892](https://reviews.llvm.org/D44892) has been very helpful.
+As Perf by itself is not implemented in LLVM, the [D44892](https://reviews.llvm.org/D44892) LLVM review has been very helpful.
 At the beginning I had the problem of understanding how to implement
 RegisterJITEventListener for the JuliaOJIT object, but my mentors where
 very helpful in this.
@@ -73,22 +73,24 @@ is in line-level annotations.
 OProfile wrapper uses the `op_write_native_code` function to dump object
 files. For line-level and code annotations it relies on
 `op_write_debug_line_info` which accepts as input a pointer to the code
-location, an array of `op_write_debug_line_info` entries and the number of entries.
+location, an array of `debug_line_info` entries and the number of entries.
 
 The problem is that LLVM does not implement line-level annotations for
 OProfile, which if we want to integrate that in Julia should be done
 manually. 
 That's why I included an external module in the Julia source,
-after it is ready we can produce an LLVM patch and include just that.
+after it is ready we can produce an LLVM patch.
+This will avoid to link the whole source file, which is a bit redundant.
 
 [`op_write_debug_line_info`](http://oprofile.sourceforge.net/doc/devel/op_write_debug_line_info.html) is composed of three fields : vma, line number and
-filename. `vma` in the docs is either defined as an [unsigned long](https://www.cs.rice.edu/~la5/doc/oprofile/d0/d27/structdebug__line__info.html#a9d5640d6fea5ff12a5545d8f8940424c) which represents the starting address of the profiling interface, which in the case of the JVM is [JVMTI](http://www.oracle.com/technetwork/articles/javase/jvmti-136367.html).
+filename. `vma` in the docs is defined as an [unsigned long](https://www.cs.rice.edu/~la5/doc/oprofile/d0/d27/structdebug__line__info.html#a9d5640d6fea5ff12a5545d8f8940424c) which represents the starting address of the profiling interface, which in the case of the JVM is [JVMTI](http://www.oracle.com/technetwork/articles/javase/jvmti-136367.html).
+
 As an implementation of `op_write_debug_line_info` I have found only the
 one present in the [JVM source](https://github.com/aosp-mirror/platform_external_oprofile/blob/3722f1053f4cab90c4daf61451713a2d61d79c71/agents/jvmti/libjvmti_oprofile.c) which seems a bit problematic to implement, especially for how to construct the `debug_line_info` struct using the __DWARF__ context built from JITed objects.
 
 # Other activities related to this working period
  
-* For thread-safe RNG I have tried to test the [KissThreading.jl](https://github.com/bkamins/KissThreading.jl/blob/master/src/KissThreading.jl#L7-L13) implementation which effectively seems to give a slowdown, especially when running eith one thread.
+* For thread-safe RNG I have tried to test the [KissThreading.jl](https://github.com/bkamins/KissThreading.jl/blob/master/src/KissThreading.jl#L7-L13) implementation which effectively seems to give a slowdown, especially when running one thread.
   I will check if implementing similalry a thread-local array of
   Mersennetwister RNGs using `task_local_storage` gives a sensible speedup.
   Also I will look if it is better to define a wrapper method that checks if
@@ -99,7 +101,9 @@ one present in the [JVM source](https://github.com/aosp-mirror/platform_external
   implementation in some working cases. A blog post will come lately.
 
 * While working with profiling tools, I finally started to work with the
-  radare r2k module, that interfaces radare with the linux kernel. It is a
-  very powerful tool to trace race conditions on the linux kernel.
+  radare r2k module, that interfaces radare with the linux kernel.
+
+  This is not related to the Julia Gsoc project, but it was fun for sure!
+  It is a very powerful tool to trace race conditions on the linux kernel.
   If I have some sparetime left, I will write a blog entry. Stay Tuned!
 
