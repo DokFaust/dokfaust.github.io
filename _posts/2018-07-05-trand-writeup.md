@@ -59,6 +59,7 @@ Testing this solution on commit `fe4337613f0da442cf01c553c0a0a8b9dc8b66a2` (~25 
 gives on the `trand()` benchmarks
 
 ```
+julia>@benchmark trand()
     memory estimate:  0 bytes
     allocs estimate:  0
     --------------
@@ -72,6 +73,7 @@ gives on the `trand()` benchmarks
 ```
 Instead on the more recent commit `80db579cf938a75cbb1edf0dbe90fc27d85210ac` (~2 days master)
 ```
+julia>@benchmark trand()
     memory estimate:  16 bytes
     allocs estimate:  1
     --------------
