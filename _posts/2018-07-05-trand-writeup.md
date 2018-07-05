@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "A case study of multithread RNG in julia"
+title: "Implementation of a thread-safe rand"
 tags: [ gsoc, julia, RNG, report ]
 ---
 
