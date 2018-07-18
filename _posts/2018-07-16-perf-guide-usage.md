@@ -1,4 +1,3 @@
-
 ---
 layout: post
 title: "Profiling Julia code with perf!"
