@@ -137,11 +137,52 @@ end
 f()
 ```
 
-Run `perf c2c record ./julia /tmp/cache.jl`, and then `perf c2c report`.
+Run
+```
+perf c2c record --call-graph dwarf,8192 -F 60000 -a ./julia /tmp/cache.jl sleep 5
+perf c2c report -NN -g --call-graph -c pid,iaddr --stdio
+```
 The first thing to keep an eye on is HITM, which are hits in a modified cacheline, divided in local and remote nodes.
 In the second table present in the output you should find the most used cachelines.
 
-If you rerun the recording script by calling `g()`, you should notice the difference in cache hits.
+```
+=================================================
+            Trace Event Information
+=================================================
+  Total records                     :       1688
+  Locked Load/Store Operations      :         95
+  Load Operations                   :        540
+  Loads - uncacheable               :          0
+  Loads - IO                        :          0
+  Loads - Miss                      :         19
+  Loads - no mapping                :         19
+  Load Fill Buffer Hit              :        117
+  Load L1D hit                      :        157
+  Load L2D hit                      :          7
+  Load LLC hit                      :         70
+  Load Local HITM                   :          0
+  Load Remote HITM                  :          0
+  Load Remote HIT                   :          0
+  Load Local DRAM                   :        151
+  Load Remote DRAM                  :          0
+  Load MESI State Exclusive         :        151
+  Load MESI State Shared            :          0
+  Load LLC Misses                   :        151
+  LLC Misses to Local DRAM          :      100.0%
+  LLC Misses to Remote DRAM         :        0.0%
+  LLC Misses to Remote cache (HIT)  :        0.0%
+  LLC Misses to Remote cache (HITM) :        0.0%
+  Store Operations                  :       1148
+  Store - uncacheable               :          0
+  Store - no mapping                :          0
+  Store L1D Hit                     :       1117
+  Store L1D Miss                    :         31
+  No Page Map Rejects               :        143
+  Unable to parse data source       :          0
+
+```
+
+Please consider that first the `-F` flag argument must be tuned on the frequency allowed on your kernel. Also always precise that the debug info in `--call-graph` is in `dwarf` format or you may run in a segmentation fault.
 
 For a more detailed guide on c2c usage, please refer to [joe mario's blog](https://joemario.github.io/blog/2016/09/01/c2c-blog/).
 
