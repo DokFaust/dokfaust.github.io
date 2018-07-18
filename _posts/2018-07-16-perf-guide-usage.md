@@ -15,7 +15,9 @@ In Linux userland we have different tracing tools that we can choose from. One o
 This presents us with events of different kinds
 
 1) *Software events* : context switches, minor faults.
+
 2) *Hardware events* : number of cycles, L1 chache misses and so on.
+
 3) *Tracepoint events* : implemented through the kernel `ftrace` infrastructure, include scheduler events and syscall monitors, which can target sockets entrance\exit ecc.
 
 Even tough most of this won't come in use in everyday development, it will still be useful in particular occasions
@@ -57,7 +59,7 @@ $ perf record -o /tmp/perf.data --call-graph dwarf ./julia /tmp/stupidprime.jl
 $ perf report --call-graph -G
 ```
 With this in mind, the perf output can look quite messy. In general looking at generated code should not be a great idea for a smaller use case, but sometimes code annotations can help us
-retrieve where to look next, also inline annotations for julia code include also function definition in files. In our example
+retrieve where to look next, also inline annotations for julia code include function definition in source files. In our example
 
 ```
 ./compiler/optimize.jl:110
@@ -78,7 +80,8 @@ retrieve where to look next, also inline annotations for julia code include also
 
 Generally we may be interested in working on bugged examples where we need to check, after a small code revision, why we get a performance regression.
 Looking to that from a full `perf record` can be quite a waste of time.
-As an alternative we can use `perf diff`, a tool that by default confronts `perf.data` and `perf.data.old` but can look up a variety of baseline input files (see [man pages](https://linux.die.net/man/1/perf-diff).
+As an alternative we can use `perf diff`, a tool that by default confronts `perf.data` and `perf.data.old` but can look up a variety of baseline input files (see [man pages](https://linux.die.net/man/1/perf-diff) ).
+
 Consider for example [issue 28126](https://github.com/JuliaLang/julia/issues/28126) where the performance of broadcasting vs. a for loop is analized in Julia.
 For simplicity I saved the snippets in two separete files, `broadcasting.jl` and `for.jl`. Record each of them separately :
 ```
@@ -91,7 +94,7 @@ As the two files `perf.data` and `perf.data.old` are present, you can go on
 $ perf diff
 ```
 It is immediate to notice that a greater percentage of time is spent on `jl_read_relocations` which is probably due to more time needed to restore the previous system image.
-Also it spends less time on `jl_apply_generic`, where depending on the context, it can be wrapping around a closure.
+Also it spends less time on `jl_apply_generic`. This information must be collocated in context, as it probably also means that is taking less time to precompile an already present function.
 
 ## Other utilities : c2c, dynamic and static probing
 
@@ -134,8 +137,13 @@ end
 f()
 ```
 
-Run `perf c2c record ./julia /tmp/cache.jl`, and then `perf c2c report`. The first thing to keep an eye on is HITM, which are hits in a modified cacheline, divided in local and remote nodes.
-In the second table present in the output you should find the most used cachelines. For a more detailed guide on c2c usage, please refer to [joe mario's blog](https://joemario.github.io/blog/2016/09/01/c2c-blog/).
+Run `perf c2c record ./julia /tmp/cache.jl`, and then `perf c2c report`.
+The first thing to keep an eye on is HITM, which are hits in a modified cacheline, divided in local and remote nodes.
+In the second table present in the output you should find the most used cachelines.
+
+If you rerun the recording script by calling `g()`, you should notice the difference in cache hits.
+
+For a more detailed guide on c2c usage, please refer to [joe mario's blog](https://joemario.github.io/blog/2016/09/01/c2c-blog/).
 
 ## Visualization of data
 Even considering tricks, `perf` data can still be harsh to digest. That's why many visualization tools have been developed to give a better prespective.
