@@ -92,9 +92,27 @@ Notice that as broadcasting is slower, we first measure the for loop. In this wa
 As the two files `perf.data` and `perf.data.old` are present, you can go on
 ```
 $ perf diff
+
+....................
+#
+11.49%     -3.91%  libjulia.so.0.7.0    [.] jl_read_relocations
+0.73%     +1.66%  libjulia.so.0.7.0    [.] jl_apply_generic
+0.29%     +1.55%  libjulia.so.0.7.0    [.] obviously_disjoint.part.15
+0.95%     +1.44%  libjulia.so.0.7.0    [.] forall_exists_subtype
+3.66%     -1.21%  [unknown]            [k] 0xffffffffb580015f
+2.77%     -1.03%  libpthread-2.27.so   [.] __pthread_mutex_lock
+0.36%     +0.97%  libjulia.so.0.7.0    [.] jl_alloc_array_1d
+0.08%     +0.93%  sys.so               [.] japi1_getindex_1361
+0.90%     +0.90%  libjulia.so.0.7.0    [.] subtype
+:
+
 ```
-It is immediate to notice that a greater percentage of time is spent on `jl_read_relocations` which is probably due to more time needed to restore the previous system image.
-Also it spends less time on `jl_apply_generic`. This information must be collocated in context, as it probably also means that is taking less time to precompile an already present function.
+In general on the left we have the baseline value, on the right the difference in newer file.
+The difference in `jl_read_relocations` can be imputed to the fact that the second script spends
+less time on runtime precompilation.
+
+While thread synchronization is faster, due to the nature of broadcasting,
+more time is spent instead on dispatch, subtyping and indexing.
 
 ## Other utilities : c2c, dynamic and static probing
 
@@ -139,9 +157,13 @@ f()
 
 Run
 ```
-perf c2c record --call-graph dwarf,8192 -F 60000 -a ./julia /tmp/cache.jl sleep 5
-perf c2c report -NN -g --call-graph -c pid,iaddr --stdio
+$ perf c2c record --call-graph dwarf,8192 -F 60000 -a sleep 5
+$ ./julia /tmp/cache.jl
+$ perf c2c report -NN -g --call-graph -c pid,iaddr --stdio
 ```
+Unofrtunately tracing a single compilation leads to a segfault ([kernel bugzilla](https://bugzilla.kernel.org/show_bug.cgi?id=200613).
+At the moment is meant as a system wide only tracing tool,
+so you will need to run Julia while tracing with perf c2c.
 The first thing to keep an eye on is HITM, which are hits in a modified cacheline, divided in local and remote nodes.
 In the second table present in the output you should find the most used cachelines.
 
