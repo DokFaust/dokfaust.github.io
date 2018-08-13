@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Gsoc week 3 report"
+title: "GSoC Final Report"
 tags: [ gsoc, julia, llvm, perf, report, RNG, RCU ]
 ---
 
