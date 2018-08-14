@@ -26,7 +26,7 @@ In LLVM external profiling tools interfaces are managed as JITEventListener clas
 To keep up with the LLVM upstream changes, the Julia JIT was ported to ORCJIT.
 
 Unfortunately LLVM ORC JIT does not support natively [JITEventListener](https://groups.google.com/forum/#!topic/llvm-dev/B7quHkDRoYk), but on the other hand, a way of registering objects and stacking them locally is present in the Julia JIT engine under the subclass `DebugObjectRegistrar`.
-This
+
 
 At this point it was necessary for me to implement just `RegisterJITEventListener`,
 which managed a vector of `JITEventListener`s, and `NotifyFinalized`,
@@ -357,7 +357,7 @@ As we noted in [issue #28577](https://github.com/JuliaLang/julia/issues/28577) t
 @noinline boom() = error("Boom")
 
 function evil(n)
-    if n == 0 
+    if n == 0
         return 1
     end
     try
@@ -377,6 +377,14 @@ As we discussed also in [issue #25523](https://github.com/JuliaLang/julia/issues
 As a similar solution was adopted with [Rust](https://github.com/rust-lang/rust/pull/42816), we go on to append at function generation a stack safe allocation mechanism as described above.
 The implemention has not been proposed yet, but it is [available at my personal fork](https://github.com/JuliaLang/julia/compare/master...DokFaust:df/probestack).
 
+The function should guarantee that if a thread has a guard page then a stack overflow can hit that guard page.
+So for function that have a stack size that is larger than a guard page (4096 bytes on x86) a function call could skip all over the function (and get to the heap, for example).
+LLVM does not document completely this ABI but it is supported only in x86 and x86-64.
+
+So our goal is touch each page between %rsp+8 and %rsp+8-%rax, ensuring that if any page is unmapped it will fault.
+The ABI trick here is that the stack frame size is moved to %rax. We are not supposed to change %rax nor %rsp.
+
+
 ```
 
 diff --git a/src/codegen.cpp b/src/codegen.cpp
@@ -392,18 +400,18 @@ index 1290d3a5992f..dd8fbb52e0f2 100644
 +{
 +#if defined(_CPU_X86_64_)
 +    asm volatile (" mov %rax, %r11;\n"
-+                  " cmp $0x1000, %r11;\n"
++                  " cmp $0x10010, %r11;\n" // Main Loop : decrementing %rsp unless there's one page remaining. Each function call should have more han one page.
 +                  " jna 3f;\n"
 +                  " 2:\n"
 +                  " sub $0x1000, %rsp;\n"
-+                  " test %rsp, 8(%rsp);\n"
-+                  " sub $0x1000, %r11;\n"
-+                  " cmp $0x1000, %r11;\n"
++                  " test %rsp, 8(%rsp);\n" // To count for the 8 bytes pushed on the stack with our return addres by testing against 8(%rsp)
++                  " sub $0x1000, %r11;\n"  // We simulate testing the pointer in the caller's context
++                  " cmp $0x1000, %r11;\n"  // The (untested) idea is that dynamic stack allocation, when returning an unsized value, triggers stackprobe even if %rax<4096
 +                  " ja 2b;\n"
 +                  " 3:\n"
-+                  " sub %r11, %rsp;\n"
++                  " sub %r11, %rsp;\n" // Finish the last space remained, getting the last bits out of r11
 +                  " test %rsp, 8(%rsp);\n"
-+                  " add %rax, %rsp;\n"
++                  " add %rax, %rsp;\n" //Restore the stack pointer TODO does the ABI allows for naked function (ie without prologue?)
 +                  " ret;"
 +                  );
 +    fprintf(stderr, "You shoudn't get here\n");
