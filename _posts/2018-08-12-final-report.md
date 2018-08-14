@@ -18,6 +18,8 @@ The project can be divided into three main subtopics :
 
 3) Work on typemap cache store/load synchronization between threads by implementing RCU primitives.
 
+Plus at the end of the document some extra work is presented.
+
 ## Reintegrate external profiling
 
 In LLVM external profiling tools interfaces are managed as JITEventListener classes.
@@ -322,6 +324,120 @@ the method cache is already protected by two separate locks.
 So to complete the work on the data structure I added, as suggested, a bunch of atomic loads
 and stores to the only cache reading method which is not included in the generating function
 lock, which seems `jl_typemap_level_assoc_exact()`. The work is listed in [PR #28582](https://github.com/JuliaLang/julia/pull/28582).
+
+## Stack probes
+
+### Background
+
+This part is not listed in the project proposal, but I wanted to follow it as it seemed a very interesting challenge!
+Stack protection is implemented by every mature compiler to avoid memory corruption or unwanted code execution by user input.
+Operative system and kernel memory management should also offer a way to better protect against a code mistake.
+
+The Linux kernel started by setting a guard page, a specific memory page that when accessed it triggers a StackOverflow error.
+By the Linux kernel that page is intended as a border between stack memory and other kinds of memory (ie the heap).
+This makes sequential access to another memory region impossible.
+
+However this protection has been cirumvented first by [Qualis with CVE-2017-1000364](https://blog.qualys.com/securitylabs/2017/06/19/the-stack-clash) where
+the vulnerability is not caused by a sequential stack overflow, which would have triggered the stack page, but by exploiting stack memory allocation
+which allowed to "jump" the guard page in a sense. This allows to access adjacent memory regions without causing an invalid access.
+This vulnerability is called __stack probe__, as it allows to survey prohibited memory regions.
+
+The vulnerability can be mitigated by implementing, for each stack allocation primitive, a memory probing mechanism for each previousy unused region, with the size of a guard page.
+Windows already implements this in its binary ABI, for Linux it is not included in the kernel, GCC has a `-fstack-check` flag [but it is broken](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=66479)
+and clang has a similar flag which compiles to a NOP.
+
+So to add this protection mechanism we had to implement a custom one, fortunately LLVM comes to hand with a [probe-stack function attribute](https://reviews.llvm.org/D34386)
+that, when feed with a stack probing function, checks that if a function with a `probe-stack` attribute is inlined into another which misses it, the caller inherits the attribute of the called.
+
+### Vulnerable Julia code
+
+As we noted in [issue #28577](https://github.com/JuliaLang/julia/issues/28577) this example code is a perfect candidate for a stack-probe test:
+
+```
+@noinline boom() = error("Boom")
+
+function evil(n)
+    if n == 0 
+        return 1
+    end
+    try
+        evil(n-1)
+    catch
+        boom()
+    end
+end
+
+evil(1000000)
+```
+It segfaults the StackOverflow internal mechanism error itself, and it is safe to call up n~27000. I noticed a segfault for `evil(50000)`.
+As we discussed also in [issue #25523](https://github.com/JuliaLang/julia/issues/25523) even if LLVM helps with prob stack guard at code generation, we still have to implement the big part.
+
+### The proposed approach
+
+As a similar solution was adopted with [Rust](https://github.com/rust-lang/rust/pull/42816), we go on to append at function generation a stack safe allocation mechanism as described above.
+The implemention has not been proposed yet, but it is [available at my personal fork](https://github.com/JuliaLang/julia/compare/master...DokFaust:df/probestack).
+
+```
+
+diff --git a/src/codegen.cpp b/src/codegen.cpp
+index 1290d3a5992f..dd8fbb52e0f2 100644
+--- a/src/codegen.cpp
++++ b/src/codegen.cpp
+@@ -155,6 +155,31 @@ extern void _chkstk(void);
+ //    return alloca(40960);
+ //}
+ #endif
++
++JL_DLLEXPORT void __jl_probe_stack(void)
++{
++#if defined(_CPU_X86_64_)
++    asm volatile (" mov %rax, %r11;\n"
++                  " cmp $0x1000, %r11;\n"
++                  " jna 3f;\n"
++                  " 2:\n"
++                  " sub $0x1000, %rsp;\n"
++                  " test %rsp, 8(%rsp);\n"
++                  " sub $0x1000, %r11;\n"
++                  " cmp $0x1000, %r11;\n"
++                  " ja 2b;\n"
++                  " 3:\n"
++                  " sub %r11, %rsp;\n"
++                  " test %rsp, 8(%rsp);\n"
++                  " add %rax, %rsp;\n"
++                  " ret;"
++                  );
++    fprintf(stderr, "You shoudn't get here\n");
++    // gc_debug_critical_error();
++    // abort(); //you shouldn't get here!
++#endif
++}
++
+```
+
+If the guard mechanism is superated without return, the execution is aborted.
+As I said above, this needs to be appended to LLVM function attributes, where I need to pass the function above that substitutes the generic pass `probe-stack`:
+
+```
+@@ -5475,6 +5500,17 @@ static std::unique_ptr<Module> emit_function(
+ #ifdef JL_DEBUG_BUILD
+     f->addFnAttr(Attribute::StackProtectStrong);
+ #endif
++
++#if !defined(JL_ASAN_ENABLED)
++#if !defined(_OS_WINDOWS_) && (defined(_CPU_X86_64_) || defined(_CPU_X86_))
++    f->addFnAttr("probe-stack", "__jl_probe_stack");
++
++    Function *jl_probe_stack = Function::Create(FunctionType::get(T_void, false),
++            Function::ExternalLinkage, "__jl_probe_stack", M);
++    add_named_global(jl_probe_stack, __jl_probe_stack);
++#endif // !_OS_WINDOWS_ && (_CPU_X86_64_ || _CPU_X86_)
++#endif //! JL_ASAN_ENABLED
++
+     ctx.f = f;
+```
+
+So the function is passed to LLVM, which should accept it as code that is defined externally.
+Unfortunately this approach errors at linking.
 
 ## Conclusions
 
